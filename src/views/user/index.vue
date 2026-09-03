@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
  * 用户管理页：维护一份本地 mock 用户列表，支持新增、保存校验、删除。
- * 表格内联编辑与方向键换格由 UserTable 负责。
+ * 表格只接收数据和表头，内联编辑与方向键换格由 EditableTable 负责。
  */
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
+import EditableTable from '@/components/editable-table/EditableTable.vue'
 import type { SysUser } from '@/type'
 import { wait } from '@/utils'
-import UserTable from './components/UserTable.vue'
-import { emptyUserForm, formatDateTime, readonlyFieldLabels } from './constants'
+import { emptyUserForm, formatDateTime, readonlyFieldLabels, userColumnConfigs } from './constants'
 import { mockUsers } from './mock'
 
 const loading = ref(false)
@@ -68,7 +68,13 @@ async function handleDelete(record: SysUser) {
       </a-space>
     </div>
 
-    <UserTable ref="tableRef" v-model:users="users" :loading="loading" @delete="handleDelete" />
+    <EditableTable
+      ref="tableRef"
+      v-model:data="users"
+      :columns="userColumnConfigs"
+      :loading="loading"
+      @delete="handleDelete"
+    />
   </div>
 </template>
 

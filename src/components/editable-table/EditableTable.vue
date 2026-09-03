@@ -1,18 +1,22 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends TableRowBase">
 /**
- * 用户管理表格（内联编辑 + 方向键换格）
+ * 通用可编辑表格（内联编辑 + 方向键换格）
+ *
+ * 外部只需传入：
+ *   - data：行数据（v-model:data）
+ *   - columns：列配置 / 表头（标题、字段、是否可编辑、控件类型、校验等）
  *
  * 结构：
  *   a-form（整表校验、捕获键盘）
  *     └── a-table（只负责画列和行）
  *           └── #bodyCell
  *                 ├── 操作列：删除
- *                 └── 其它列：UserFieldCell（Input / Select / DatePicker 或只读文本）
+ *                 └── 其它列：FieldCell（Input / Select / DatePicker 或只读文本）
  *
  * 为什么 form 包 table：
  *   Ant Design Vue 的校验依赖 a-form-item 的 name 路径。
- *   每个可编辑格的 name 是 ['users', 行下标, 字段名]，
- *   对应 formModel = { users: 当前行数组 }，保存时一次校验全部可编辑格。
+ *   每个可编辑格的 name 是 ['data', 行下标, 字段名]，
+ *   对应 formModel = { data: 当前行数组 }，保存时一次校验全部可编辑格。
  *
  * 键盘换格（由本文件发起，细节在 useTableCellNav）：
  *   1. form 上 @keydown.capture 抢在 Select 之前接到方向键 / 回车
@@ -28,50 +32,64 @@
  *
  * 子格通过 provide/inject 把自己注册进 cellNav（rowId + 字段名 → 聚焦方法）。
  */
-import type { FormInstance } from "ant-design-vue";
-import { computed, nextTick, provide, ref } from "vue";
-import type { SysUser } from "@/type";
+import type { FormInstance, TableColumnsType } from 'ant-design-vue'
+import { computed, nextTick, provide, ref } from 'vue'
+import FieldCell from './FieldCell.vue'
 import {
   TABLE_CELL_NAV_KEY,
   caretEdgeForArrival,
   resolveNavTarget,
   setTextCaret,
   useTableCellNav,
-} from "../composables/useTableCellNav";
-import { userColumnConfigs, userColumns } from "../constants";
-import UserFieldCell from "./UserFieldCell.vue";
+} from './composables/useTableCellNav'
+import type { EditableColumn, TableRowBase } from './types'
 
 /**
- * 行数据双向绑定。父页面（index.vue）持有 users，
+ * 行数据双向绑定。父页面持有 data，
  * 单元格里改值会直接改这条记录，保存时再整表校验。
  */
-const users = defineModel<SysUser[]>("users", { required: true });
+const data = defineModel<T[]>('data', { required: true })
 
-defineProps<{
+const props = defineProps<{
+  /** 列配置即表头：标题、字段、编辑控件、校验规则。 */
+  columns: EditableColumn<T>[]
   /** 保存 / 删除请求进行中，表格显示 loading。 */
-  loading: boolean;
-}>();
+  loading?: boolean
+}>()
 
 const emit = defineEmits<{
   /** 操作列确认删除后，把当前行交给父页面从列表里摘掉。 */
-  delete: [record: SysUser];
-}>();
+  delete: [record: T]
+}>()
 
-const formRef = ref<FormInstance>();
+const formRef = ref<FormInstance>()
 
 /**
  * 整表校验用的 model。
- * UserFieldCell 里 a-form-item 的 name 是 ['users', index, 'phone'] 这种路径，
- * 必须能在这个对象上取到 formModel.users[index].phone。
+ * FieldCell 里 a-form-item 的 name 是 ['data', index, 'phone'] 这种路径，
+ * 必须能在这个对象上取到 formModel.data[index].phone。
  */
-const formModel = computed(() => ({ users: users.value }));
+const formModel = computed(() => ({ data: data.value }))
+
+const tableColumns = computed<TableColumnsType>(() => [
+  ...props.columns.map((item) => ({
+    title: item.title,
+    dataIndex: item.dataIndex,
+    width: item.width,
+  })),
+  { title: '操作', key: 'action', width: 90, fixed: 'right' as const },
+])
+
+const scrollX = computed(() =>
+  props.columns.reduce((sum, col) => sum + (col.width ?? 120), 0) + 90,
+)
 
 /**
- * 单元格注册表：UserFieldCell 挂载时 register，卸载或变为只读时 unregister。
+ * 单元格注册表：FieldCell 挂载时 register，卸载或变为只读时 unregister。
  * provide 下去，子组件 inject TABLE_CELL_NAV_KEY 即可调用 focus / blur。
  */
-const cellNav = useTableCellNav();
-provide(TABLE_CELL_NAV_KEY, cellNav);
+const cellNav = useTableCellNav()
+provide(TABLE_CELL_NAV_KEY, cellNav)
 
 /**
  * 表格键盘入口。必须用 capture：
@@ -94,69 +112,61 @@ provide(TABLE_CELL_NAV_KEY, cellNav);
  *      caretEdgeForArrival：从左边进 → 光标放开头；回车 / Shift+方向进 → 全选；从右边进 → 放末尾
  */
 async function onNavKeydown(event: KeyboardEvent) {
-  const target = resolveNavTarget(event, users.value);
-  if (!target) return;
-  event.preventDefault();
-  event.stopPropagation();
+  const target = resolveNavTarget(event, data.value, props.columns)
+  if (!target) return
+  event.preventDefault()
+  event.stopPropagation()
   if (target.stepSelect) {
-    cellNav.stepSelect(
-      target.current.rowId,
-      target.current.field,
-      target.stepSelect,
-    );
-    return;
+    cellNav.stepSelect(target.current.rowId, target.current.field, target.stepSelect)
+    return
   }
   if (target.stepDate != null) {
-    cellNav.stepDate(
-      target.current.rowId,
-      target.current.field,
-      target.stepDate,
-    );
-    return;
+    cellNav.stepDate(target.current.rowId, target.current.field, target.stepDate)
+    return
   }
   if (target.caretPos != null) {
-    setTextCaret(event.target, target.caretPos);
-    return;
+    setTextCaret(event.target, target.caretPos)
+    return
   }
-  if (!target.next) return;
-  await cellNav.blurCell(target.current.rowId, target.current.field);
-  await nextTick();
+  if (!target.next) return
+  await cellNav.blurCell(target.current.rowId, target.current.field)
+  await nextTick()
   cellNav.focusCell(
     target.next.rowId,
     target.next.field,
     caretEdgeForArrival(target.direction, target.selectAll),
-  );
+  )
 }
 
 /**
- * 当前行在 users 数组里的下标。
+ * 当前行在 data 数组里的下标。
  * form name 必须用这个下标，不能用分页后的可视下标（本表虽已不分页，仍按全量数组对齐 model）。
  */
-function rowIndex(record: SysUser) {
-  return users.value.findIndex((item) => item.id === record.id);
+function rowIndex(record: T) {
+  return data.value.findIndex((item) => String(item.id) === String(record.id))
 }
 
 /**
- * a-form-item 的 name 路径，例如 ['users', 2, 'phone']。
+ * a-form-item 的 name 路径，例如 ['data', 2, 'phone']。
  * 保存时 form.validate() 按这条路径读值和报错。
  */
-function fieldName(record: SysUser, field: keyof SysUser) {
-  return ["users", rowIndex(record), field] as const;
+function fieldName(record: T, field: keyof T & string) {
+  return ['data', rowIndex(record), field] as const
 }
 
 /**
- * 用列的 dataIndex 找回 userColumnConfigs 里的完整配置
+ * 用列的 dataIndex 找回 columns 里的完整配置
  * （控件类型、是否可编辑、校验规则、下拉选项等）。
  * bodyCell 槽只给了 antd 的 column 对象，没有这些编辑信息。
  */
 function columnConfig(dataIndex: unknown) {
-  return userColumnConfigs.find((item) => item.dataIndex === dataIndex);
+  return props.columns.find((item) => item.dataIndex === dataIndex)
 }
 
 /** 父页面保存前调用，校验所有 a-form-item。 */
 defineExpose({
   validate: () => formRef.value?.validate(),
-});
+})
 </script>
 
 <template>
@@ -172,39 +182,39 @@ defineExpose({
   >
     <!--
       pagination=false：一次渲染全部行，键盘上下的「第一行/最后一行」就是这张表的首尾。
-      scroll.x：列比较多，横向滚动；换格后由 cellNav.focusCell 把目标格滚进可视区。
+      scroll.x：按列宽求和；换格后由 cellNav.focusCell 把目标格滚进可视区。
       row-key=id：行身份稳定，避免重绘后焦点注册表对不上。
     -->
     <a-table
-      :columns="userColumns"
-      :data-source="users"
+      :columns="tableColumns"
+      :data-source="data"
       :loading="loading"
       :pagination="false"
       row-key="id"
-      :scroll="{ x: 2350 }"
+      :scroll="{ x: scrollX }"
     >
       <template #bodyCell="{ column, record }">
         <!-- 操作列不走表单，单独渲染删除。 -->
         <template v-if="column.key === 'action'">
           <a-popconfirm
-            title="确认删除该用户？"
-            @confirm="emit('delete', record)"
+            title="确认删除该行？"
+            @confirm="emit('delete', record as T)"
           >
             <a class="danger">删除</a>
           </a-popconfirm>
         </template>
         <!--
-          其余列交给 UserFieldCell：
+          其余列交给 FieldCell：
           - config：可编辑性、控件、校验
           - record：当前行，单元格直接改这条对象上的字段
           - name：form 校验路径
-          只读列在 UserFieldCell 内部会改成灰色文本，不会注册到键盘导航。
+          只读列在 FieldCell 内部会改成灰色文本，不会注册到键盘导航。
         -->
-        <UserFieldCell
+        <FieldCell
           v-else-if="columnConfig(column.dataIndex)"
           :config="columnConfig(column.dataIndex)!"
-          :record="record"
-          :name="fieldName(record, columnConfig(column.dataIndex)!.dataIndex)"
+          :record="(record as T)"
+          :name="fieldName(record as T, columnConfig(column.dataIndex)!.dataIndex)"
         />
       </template>
     </a-table>

@@ -1,9 +1,9 @@
 /**
  * 用户管理表格的列配置、校验规则和下拉选项。
- * 列是否可编辑、用哪种控件，都以这里为准；键盘导航也会读这份配置跳过只读格。
+ * 作为「表头」传给通用 EditableTable；是否可编辑、用哪种控件都以这里为准。
  */
-import type { TableColumnsType } from 'ant-design-vue'
-import type { SysUser, UserForm, UserGender, UserRole } from '@/type'
+import type { EditableColumn } from '@/components/editable-table'
+import type { SysUser, UserForm } from '@/type'
 
 /** 新增用户时的可编辑字段默认值（系统字段如 ID、工号由页面另行生成）。 */
 export const emptyUserForm = (): UserForm => ({
@@ -46,32 +46,6 @@ export const departmentOptions = [
   { label: '人事', value: '人事' },
 ]
 
-const roleMap: Record<UserRole, string> = {
-  admin: '管理员',
-  editor: '运营',
-  viewer: '访客',
-}
-
-const statusMap: Record<SysUser['status'], string> = {
-  active: '启用',
-  disabled: '禁用',
-}
-
-const genderMap: Record<UserGender, string> = {
-  male: '男',
-  female: '女',
-}
-
-/** 只读单元格展示：枚举转中文，空值显示为 "-"。 */
-export function displayUserField(field: keyof SysUser, record: SysUser) {
-  const value = record[field]
-  if (field === 'role') return roleMap[record.role]
-  if (field === 'status') return statusMap[record.status]
-  if (field === 'gender') return genderMap[record.gender]
-  if (value === '' || value === undefined) return '-'
-  return String(value)
-}
-
 export const userFormRules = {
   username: [{ required: true, message: '请输入用户名' }],
   name: [{ required: true, message: '请输入姓名' }],
@@ -83,22 +57,8 @@ export const userFormRules = {
   status: [{ required: true, message: '请选择状态' }],
 }
 
-export type UserFieldControl = 'input' | 'select' | 'datetime' | 'date' | 'number'
-
-/** 一列的展示与编辑描述。editable 为 new-only 时，仅新增行（record.isNew）可改。 */
-export interface UserColumnConfig {
-  title: string
-  dataIndex: keyof SysUser
-  width: number
-  editable: boolean | 'new-only'
-  control?: UserFieldControl
-  options?: { label: string; value: string }[]
-  placeholder?: string
-  rules?: { required?: boolean; type?: 'email'; message: string }[]
-}
-
 /** 表格列顺序与编辑策略；键盘左右移动也按这个顺序找下一个表单。 */
-export const userColumnConfigs: UserColumnConfig[] = [
+export const userColumnConfigs: EditableColumn<SysUser>[] = [
   { title: 'ID', dataIndex: 'id', width: 80, editable: false },
   { title: '工号', dataIndex: 'employeeNo', width: 110, editable: false },
   {
@@ -216,27 +176,10 @@ export const userColumnConfigs: UserColumnConfig[] = [
   { title: '创建时间', dataIndex: 'createdAt', width: 180, editable: false },
 ]
 
-/** 传给 a-table 的列定义；操作列单独固定在右侧。 */
-export const userColumns: TableColumnsType<SysUser> = [
-  ...userColumnConfigs.map((item) => ({
-    title: item.title,
-    dataIndex: item.dataIndex,
-    width: item.width,
-  })),
-  { title: '操作', key: 'action', width: 90, fixed: 'right' as const },
-]
-
 /** 页面提示用：始终不可编辑的列标题。 */
 export const readonlyFieldLabels = userColumnConfigs
   .filter((item) => item.editable === false)
   .map((item) => item.title)
-
-/** 当前行该列是否渲染为表单。new-only 只在新增用户时开放。 */
-export function isFieldEditable(config: UserColumnConfig, record: SysUser) {
-  if (config.editable === true) return true
-  if (config.editable === 'new-only') return Boolean(record.isNew)
-  return false
-}
 
 /** 把数字补成两位，如 1 → "01"，用于生成 username。 */
 export function padNo(n: number) {

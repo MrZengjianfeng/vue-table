@@ -1,21 +1,17 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends TableRowBase">
 /**
- * 用户表格里的单个单元格。
+ * 可编辑表格里的单个单元格。
  * 可编辑时渲染 Input / Select / DatePicker，并注册到键盘导航；
  * 不可编辑时只展示只读文本。
  */
 import dayjs from 'dayjs'
 import { computed, inject, nextTick, ref, watchEffect } from 'vue'
-import type { SysUser } from '@/type'
 import {
   TABLE_CELL_NAV_KEY,
   type CaretEdge,
-} from '../composables/useTableCellNav'
-import {
-  displayUserField,
-  isFieldEditable,
-  type UserColumnConfig,
-} from '../constants'
+} from './composables/useTableCellNav'
+import { displayField, isFieldEditable } from './helpers'
+import type { EditableColumn, TableRowBase } from './types'
 
 /** Ant Design Vue 控件通过 expose 提供的聚焦方法。 */
 type FocusableComp = {
@@ -28,9 +24,9 @@ const DATETIME_FORMAT = 'YYYY-MM-DD HH:mm:ss'
 const DATE_FORMAT = 'YYYY-MM-DD'
 
 const props = defineProps<{
-  config: UserColumnConfig
-  record: SysUser
-  /** a-form-item 的 name，形如 ['users', 行下标, 字段名]，用于整表校验。 */
+  config: EditableColumn<T>
+  record: T
+  /** a-form-item 的 name，形如 ['data', 行下标, 字段名]，用于整表校验。 */
   name: readonly (string | number)[]
 }>()
 
@@ -65,14 +61,15 @@ const fieldValue = computed({
     return String(value ?? '')
   },
   set: (value: string | number | undefined) => {
-    const key = props.config.dataIndex
+    const key = String(props.config.dataIndex)
     if (key === 'id' || key === 'isNew') return
+    const row = props.record as Record<string, unknown>
     if (isNumber.value) {
       const num = value == null || value === '' ? 0 : Number(value)
-      ;(props.record as unknown as Record<string, number>)[key] = Number.isFinite(num) ? num : 0
+      row[key] = Number.isFinite(num) ? num : 0
       return
     }
-    ;(props.record as unknown as Record<string, string>)[key] = value == null ? '' : String(value)
+    row[key] = value == null ? '' : String(value)
   },
 })
 
@@ -182,7 +179,7 @@ function placeCaret(edge: CaretEdge) {
 // 可编辑时注册，变为只读（例如保存后用户名）或卸载时注销。
 watchEffect((onCleanup) => {
   if (!nav || !editable.value) return
-  const rowId = props.record.id
+  const rowId = String(props.record.id)
   const field = String(props.config.dataIndex)
   nav.registerCell(rowId, field, {
     focus: focusCell,
@@ -246,7 +243,7 @@ watchEffect((onCleanup) => {
       />
     </a-form-item>
   </div>
-  <span v-else class="readonly-cell">{{ displayUserField(config.dataIndex, record) }}</span>
+  <span v-else class="readonly-cell">{{ displayField(config, record) }}</span>
 </template>
 
 <style scoped>

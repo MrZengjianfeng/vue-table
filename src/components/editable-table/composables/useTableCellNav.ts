@@ -15,8 +15,8 @@
  * - 第一行 Shift+上、最后一行 Shift+下、该行首个表单 Shift+左、末个表单 Shift+右、表末按回车：不移动、不循环。
  */
 import { nextTick, type InjectionKey } from 'vue'
-import type { SysUser } from '@/type'
-import { isFieldEditable, userColumnConfigs } from '../constants'
+import { isFieldEditable } from '../helpers'
+import type { EditableColumn, TableRowBase } from '../types'
 
 /** 方向键与回车对应的移动方向。回车是「下一格」，不是「下一行」。 */
 export type NavDirection = 'up' | 'down' | 'left' | 'right' | 'enter'
@@ -41,14 +41,14 @@ export interface CellNavHandle {
   stepDate?: (days: number) => void
 }
 
-/** 由 UserTable provide、UserFieldCell inject 的导航注册表。 */
+/** 由 EditableTable provide、FieldCell inject 的导航注册表。 */
 export interface TableCellNavApi {
-  registerCell: (rowId: number, field: string, handle: CellNavHandle) => void
-  unregisterCell: (rowId: number, field: string) => void
-  blurCell: (rowId: number, field: string) => void | Promise<void>
-  focusCell: (rowId: number, field: string, edge: CaretEdge) => void
-  stepSelect: (rowId: number, field: string, delta: -1 | 1) => void
-  stepDate: (rowId: number, field: string, days: number) => void
+  registerCell: (rowId: string, field: string, handle: CellNavHandle) => void
+  unregisterCell: (rowId: string, field: string) => void
+  blurCell: (rowId: string, field: string) => void | Promise<void>
+  focusCell: (rowId: string, field: string, edge: CaretEdge) => void
+  stepSelect: (rowId: string, field: string, delta: -1 | 1) => void
+  stepDate: (rowId: string, field: string, days: number) => void
 }
 
 export const TABLE_CELL_NAV_KEY: InjectionKey<TableCellNavApi> = Symbol('tableCellNav')
@@ -95,10 +95,10 @@ function closestNavCell(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return null
   const cell = target.closest('[data-nav-row][data-nav-field]')
   if (!(cell instanceof HTMLElement)) return null
-  const rowId = Number(cell.dataset.navRow)
+  const rowId = cell.dataset.navRow
   const field = cell.dataset.navField
-  if (!Number.isFinite(rowId) || !field) return null
-  return { rowId, field: field as keyof SysUser }
+  if (!rowId || !field) return null
+  return { rowId, field }
 }
 
 /**
@@ -154,12 +154,12 @@ export function caretEdgeForArrival(direction: NavDirection, selectAll = false):
   return 'end'
 }
 
-function columnOf(field: keyof SysUser) {
-  return userColumnConfigs.find((item) => item.dataIndex === field)
+function columnOf<T extends TableRowBase>(columns: EditableColumn<T>[], field: string) {
+  return columns.find((item) => item.dataIndex === field)
 }
 
-function isDateControl(field: keyof SysUser) {
-  const control = columnOf(field)?.control
+function isDateControl<T extends TableRowBase>(columns: EditableColumn<T>[], field: string) {
+  const control = columnOf(columns, field)?.control
   return control === 'date' || control === 'datetime'
 }
 
@@ -171,89 +171,90 @@ const dateStepDays: Record<'up' | 'down' | 'left' | 'right', number> = {
   right: 1,
 }
 
-/** 当前行实际可编辑的字段，按列配置顺序（已有用户没有「用户名」）。 */
-function editableFields(record: SysUser) {
-  return userColumnConfigs.filter((item) => isFieldEditable(item, record)).map((item) => item.dataIndex)
+/** 当前行实际可编辑的字段，按列配置顺序。 */
+function editableFields<T extends TableRowBase>(columns: EditableColumn<T>[], record: T) {
+  return columns.filter((item) => isFieldEditable(item, record)).map((item) => String(item.dataIndex))
 }
 
 /**
  * 按方向查找下一个表单单元格。
  * 找不到（已到当前表边界）返回 null，调用方应保持焦点不动。
  */
-export function findNextCell(
-  pageRows: SysUser[],
-  rowId: number,
-  field: keyof SysUser,
+export function findNextCell<T extends TableRowBase>(
+  pageRows: T[],
+  columns: EditableColumn<T>[],
+  rowId: string,
+  field: string,
   direction: NavDirection,
-): { rowId: number; field: keyof SysUser } | null {
-  const rowIndex = pageRows.findIndex((item) => item.id === rowId)
+): { rowId: string; field: string } | null {
+  const rowIndex = pageRows.findIndex((item) => String(item.id) === rowId)
   if (rowIndex < 0) return null
 
   if (direction === 'left' || direction === 'right') {
     const record = pageRows[rowIndex]
-    const fields = editableFields(record)
+    const fields = editableFields(columns, record)
     const current = fields.indexOf(field)
     if (current < 0) return null
     const next = direction === 'left' ? current - 1 : current + 1
     if (next < 0 || next >= fields.length) return null
-    return { rowId: record.id, field: fields[next] }
+    return { rowId: String(record.id), field: fields[next] }
   }
 
   // 回车：同行下一个可编辑格；行末换到下一行第一个可编辑格；表末不动。
   if (direction === 'enter') {
     const record = pageRows[rowIndex]
-    const fields = editableFields(record)
+    const fields = editableFields(columns, record)
     const current = fields.indexOf(field)
     if (current < 0) return null
     if (current + 1 < fields.length) {
-      return { rowId: record.id, field: fields[current + 1] }
+      return { rowId: String(record.id), field: fields[current + 1] }
     }
     for (let index = rowIndex + 1; index < pageRows.length; index += 1) {
       const nextRecord = pageRows[index]
-      const nextFields = editableFields(nextRecord)
+      const nextFields = editableFields(columns, nextRecord)
       if (nextFields.length > 0) {
-        return { rowId: nextRecord.id, field: nextFields[0] }
+        return { rowId: String(nextRecord.id), field: nextFields[0] }
       }
     }
     return null
   }
 
   const step = direction === 'up' ? -1 : 1
-  const config = columnOf(field)
+  const config = columnOf(columns, field)
   if (!config) return null
 
   // 垂直移动保持同一字段，跳过该列不可编辑的行（例如已有用户的用户名）。
   for (let index = rowIndex + step; index >= 0 && index < pageRows.length; index += step) {
     const record = pageRows[index]
     if (isFieldEditable(config, record)) {
-      return { rowId: record.id, field }
+      return { rowId: String(record.id), field }
     }
   }
 
   return null
 }
 
-function cellKey(rowId: number, field: string) {
+function cellKey(rowId: string, field: string) {
   return `${rowId}:${field}`
 }
 
-/** 维护「行 + 字段 → 单元格句柄」的注册表，供 UserTable 聚焦指定格。 */
+/** 维护「行 + 字段 → 单元格句柄」的注册表，供表格聚焦指定格。 */
 export function useTableCellNav(): TableCellNavApi {
   const cells = new Map<string, CellNavHandle>()
 
-  function registerCell(rowId: number, field: string, handle: CellNavHandle) {
+  function registerCell(rowId: string, field: string, handle: CellNavHandle) {
     cells.set(cellKey(rowId, field), handle)
   }
 
-  function unregisterCell(rowId: number, field: string) {
+  function unregisterCell(rowId: string, field: string) {
     cells.delete(cellKey(rowId, field))
   }
 
-  function blurCell(rowId: number, field: string) {
+  function blurCell(rowId: string, field: string) {
     return cells.get(cellKey(rowId, field))?.blur()
   }
 
-  function focusCell(rowId: number, field: string, edge: CaretEdge) {
+  function focusCell(rowId: string, field: string, edge: CaretEdge) {
     const handle = cells.get(cellKey(rowId, field))
     if (!handle) return
     handle.focus(edge)
@@ -262,11 +263,11 @@ export function useTableCellNav(): TableCellNavApi {
     })
   }
 
-  function stepSelect(rowId: number, field: string, delta: -1 | 1) {
+  function stepSelect(rowId: string, field: string, delta: -1 | 1) {
     cells.get(cellKey(rowId, field))?.stepOption?.(delta)
   }
 
-  function stepDate(rowId: number, field: string, days: number) {
+  function stepDate(rowId: string, field: string, days: number) {
     cells.get(cellKey(rowId, field))?.stepDate?.(days)
   }
 
@@ -278,13 +279,14 @@ export function useTableCellNav(): TableCellNavApi {
  * 返回 null 表示放行浏览器默认行为（例如 Input 内移动光标）。
  * next 为 null 表示已到边界，调用方仍应 preventDefault，避免 Select 被方向键改值。
  */
-export function resolveNavTarget(
+export function resolveNavTarget<T extends TableRowBase>(
   event: KeyboardEvent,
-  pageRows: SysUser[],
+  pageRows: T[],
+  columns: EditableColumn<T>[],
 ): {
   direction: NavDirection
-  current: { rowId: number; field: keyof SysUser }
-  next: { rowId: number; field: keyof SysUser } | null
+  current: { rowId: string; field: string }
+  next: { rowId: string; field: string } | null
   selectAll: boolean
   /** Select 获焦时用方向键改选项；有值则不要换格。 */
   stepSelect?: -1 | 1
@@ -302,11 +304,7 @@ export function resolveNavTarget(
 
   const shiftNav = isShiftArrowNav(event)
   // Select：普通方向键改选项（左=上，右=下）；Shift 仍换格；回车仍去下一格。
-  if (
-    !shiftNav &&
-    direction !== 'enter' &&
-    columnOf(cell.field)?.control === 'select'
-  ) {
+  if (!shiftNav && direction !== 'enter' && columnOf(columns, cell.field)?.control === 'select') {
     return {
       direction,
       current: cell,
@@ -317,7 +315,7 @@ export function resolveNavTarget(
   }
 
   // DatePicker：上 -7 天、下 +7 天、左 -1 天、右 +1 天。
-  if (!shiftNav && direction !== 'enter' && isDateControl(cell.field)) {
+  if (!shiftNav && direction !== 'enter' && isDateControl(columns, cell.field)) {
     return {
       direction,
       current: cell,
@@ -350,7 +348,7 @@ export function resolveNavTarget(
   return {
     direction,
     current: cell,
-    next: findNextCell(pageRows, cell.rowId, cell.field, direction),
+    next: findNextCell(pageRows, columns, cell.rowId, cell.field, direction),
     selectAll: shiftNav || direction === 'enter',
   }
 }
