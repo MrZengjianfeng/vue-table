@@ -176,6 +176,35 @@ function placeCaret(edge: CaretEdge) {
   })
 }
 
+/**
+ * 鼠标点进尚未获焦的输入框时全选，与键盘进入一致。
+ * 必须在 mouseup 里 preventDefault：浏览器会在 click 时按点击位置放光标，把全选清掉。
+ * 已获焦后再点：不拦截，允许把光标放到点击处或拖拽选区。
+ * mouseup 听 window：按住拖出格子再松开时不要误全选。
+ */
+function isPointerOnTextInput(event: MouseEvent) {
+  if (isSelect.value) return false
+  const target = event.target
+  if (!(target instanceof HTMLElement)) return false
+  if (target.closest('.ant-select')) return false
+  if (target.closest('.ant-picker-suffix, .ant-picker-clear')) return false
+  return Boolean(target.closest('input, textarea'))
+}
+
+function onPointerSelectDown(event: MouseEvent) {
+  if (!isPointerOnTextInput(event)) return
+  const input = nativeInputEl()
+  if (!input || document.activeElement === input) return
+
+  const onUp = (upEvent: MouseEvent) => {
+    window.removeEventListener('mouseup', onUp, true)
+    if (!wrapRef.value?.contains(upEvent.target as Node)) return
+    upEvent.preventDefault()
+    placeCaret('all')
+  }
+  window.addEventListener('mouseup', onUp, true)
+}
+
 // 可编辑时注册，变为只读（例如保存后用户名）或卸载时注销。
 watchEffect((onCleanup) => {
   if (!nav || !editable.value) return
@@ -201,6 +230,7 @@ watchEffect((onCleanup) => {
     :data-nav-row="record.id"
     :data-nav-field="config.dataIndex"
     :data-nav-popup-open="popupOpen ? 'true' : undefined"
+    @mousedown="onPointerSelectDown"
   >
     <a-form-item class="table-form-item" :name="name" :rules="config.rules">
       <a-select
