@@ -35,4 +35,9 @@ export interface EditableColumn<T extends TableRowBase = TableRowBase> {
   options?: ColumnOption[]
   placeholder?: string
   rules?: ColumnRule[]
+  /**
+   * 单元格失焦后回调。在控件原有 blur 之后触发，不拦截获焦/失焦。
+   * 键盘换格时也会走到这里（因为会调用控件自己的 blur）。
+   */
+  onBlur?: (record: T) => void
 }

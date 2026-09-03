@@ -32,44 +32,44 @@
  *
  * 子格通过 provide/inject 把自己注册进 cellNav（rowId + 字段名 → 聚焦方法）。
  */
-import type { FormInstance, TableColumnsType } from 'ant-design-vue'
-import { computed, nextTick, provide, ref } from 'vue'
-import FieldCell from './FieldCell.vue'
+import type { FormInstance, TableColumnsType } from "ant-design-vue";
+import { computed, nextTick, provide, ref } from "vue";
+import FieldCell from "./FieldCell.vue";
 import {
   TABLE_CELL_NAV_KEY,
   caretEdgeForArrival,
   resolveNavTarget,
   setTextCaret,
   useTableCellNav,
-} from './composables/useTableCellNav'
-import type { EditableColumn, TableRowBase } from './types'
+} from "./composables/useTableCellNav";
+import type { EditableColumn, TableRowBase } from "./types";
 
 /**
  * 行数据双向绑定。父页面持有 data，
  * 单元格里改值会直接改这条记录，保存时再整表校验。
  */
-const data = defineModel<T[]>('data', { required: true })
+const data = defineModel<T[]>("data", { required: true });
 
 const props = defineProps<{
   /** 列配置即表头：标题、字段、编辑控件、校验规则。 */
-  columns: EditableColumn<T>[]
+  columns: EditableColumn<T>[];
   /** 保存 / 删除请求进行中，表格显示 loading。 */
-  loading?: boolean
-}>()
+  loading?: boolean;
+}>();
 
 const emit = defineEmits<{
   /** 操作列确认删除后，把当前行交给父页面从列表里摘掉。 */
-  delete: [record: T]
-}>()
+  delete: [record: T];
+}>();
 
-const formRef = ref<FormInstance>()
+const formRef = ref<FormInstance>();
 
 /**
  * 整表校验用的 model。
  * FieldCell 里 a-form-item 的 name 是 ['data', index, 'phone'] 这种路径，
  * 必须能在这个对象上取到 formModel.data[index].phone。
  */
-const formModel = computed(() => ({ data: data.value }))
+const formModel = computed(() => ({ data: data.value }));
 
 const tableColumns = computed<TableColumnsType>(() => [
   ...props.columns.map((item) => ({
@@ -77,19 +77,19 @@ const tableColumns = computed<TableColumnsType>(() => [
     dataIndex: item.dataIndex,
     width: item.width,
   })),
-  { title: '操作', key: 'action', width: 90, fixed: 'right' as const },
-])
+  { title: "操作", key: "action", width: 90, fixed: "right" as const },
+]);
 
-const scrollX = computed(() =>
-  props.columns.reduce((sum, col) => sum + (col.width ?? 120), 0) + 90,
-)
+const scrollX = computed(
+  () => props.columns.reduce((sum, col) => sum + (col.width ?? 120), 0) + 90,
+);
 
 /**
  * 单元格注册表：FieldCell 挂载时 register，卸载或变为只读时 unregister。
  * provide 下去，子组件 inject TABLE_CELL_NAV_KEY 即可调用 focus / blur。
  */
-const cellNav = useTableCellNav()
-provide(TABLE_CELL_NAV_KEY, cellNav)
+const cellNav = useTableCellNav();
+provide(TABLE_CELL_NAV_KEY, cellNav);
 
 /**
  * 表格键盘入口。必须用 capture：
@@ -112,30 +112,38 @@ provide(TABLE_CELL_NAV_KEY, cellNav)
  *      caretEdgeForArrival：从左边进 → 光标放开头；回车 / Shift+方向进 → 全选；从右边进 → 放末尾
  */
 async function onNavKeydown(event: KeyboardEvent) {
-  const target = resolveNavTarget(event, data.value, props.columns)
-  if (!target) return
-  event.preventDefault()
-  event.stopPropagation()
+  const target = resolveNavTarget(event, data.value, props.columns);
+  if (!target) return;
+  event.preventDefault();
+  event.stopPropagation();
   if (target.stepSelect) {
-    cellNav.stepSelect(target.current.rowId, target.current.field, target.stepSelect)
-    return
+    cellNav.stepSelect(
+      target.current.rowId,
+      target.current.field,
+      target.stepSelect,
+    );
+    return;
   }
   if (target.stepDate != null) {
-    cellNav.stepDate(target.current.rowId, target.current.field, target.stepDate)
-    return
+    cellNav.stepDate(
+      target.current.rowId,
+      target.current.field,
+      target.stepDate,
+    );
+    return;
   }
   if (target.caretPos != null) {
-    setTextCaret(event.target, target.caretPos)
-    return
+    setTextCaret(event.target, target.caretPos);
+    return;
   }
-  if (!target.next) return
-  await cellNav.blurCell(target.current.rowId, target.current.field)
-  await nextTick()
+  if (!target.next) return;
+  await cellNav.blurCell(target.current.rowId, target.current.field);
+  await nextTick();
   cellNav.focusCell(
     target.next.rowId,
     target.next.field,
     caretEdgeForArrival(target.direction, target.selectAll),
-  )
+  );
 }
 
 /**
@@ -143,7 +151,7 @@ async function onNavKeydown(event: KeyboardEvent) {
  * form name 必须用这个下标，不能用分页后的可视下标（本表虽已不分页，仍按全量数组对齐 model）。
  */
 function rowIndex(record: T) {
-  return data.value.findIndex((item) => String(item.id) === String(record.id))
+  return data.value.findIndex((item) => String(item.id) === String(record.id));
 }
 
 /**
@@ -151,7 +159,7 @@ function rowIndex(record: T) {
  * 保存时 form.validate() 按这条路径读值和报错。
  */
 function fieldName(record: T, field: keyof T & string) {
-  return ['data', rowIndex(record), field] as const
+  return ["data", rowIndex(record), field] as const;
 }
 
 /**
@@ -160,13 +168,13 @@ function fieldName(record: T, field: keyof T & string) {
  * bodyCell 槽只给了 antd 的 column 对象，没有这些编辑信息。
  */
 function columnConfig(dataIndex: unknown) {
-  return props.columns.find((item) => item.dataIndex === dataIndex)
+  return props.columns.find((item) => item.dataIndex === dataIndex);
 }
 
 /** 父页面保存前调用，校验所有 a-form-item。 */
 defineExpose({
   validate: () => formRef.value?.validate(),
-})
+});
 </script>
 
 <template>
@@ -213,8 +221,10 @@ defineExpose({
         <FieldCell
           v-else-if="columnConfig(column.dataIndex)"
           :config="columnConfig(column.dataIndex)!"
-          :record="(record as T)"
-          :name="fieldName(record as T, columnConfig(column.dataIndex)!.dataIndex)"
+          :record="record as T"
+          :name="
+            fieldName(record as T, columnConfig(column.dataIndex)!.dataIndex)
+          "
         />
       </template>
     </a-table>

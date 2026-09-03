@@ -79,10 +79,6 @@ function nativeInputEl() {
   return null
 }
 
-function openPopup() {
-  popupOpen.value = true
-}
-
 /** Select 失焦后关掉下拉；焦点若落到下拉面板上则先不关，避免点选项时被提前收起。 */
 function closePopupOnBlur() {
   nextTick(() => {
@@ -93,6 +89,15 @@ function closePopupOnBlur() {
     }
     popupOpen.value = false
   })
+}
+
+/**
+ * 控件原有 blur 已经触发后再跑这里：不 stop、不 preventDefault。
+ * 列配置的 onBlur 只是额外业务，不能代替 Form.Item 失焦校验。
+ */
+function onNativeBlur() {
+  closePopupOnBlur()
+  props.config.onBlur?.(props.record)
 }
 
 /** Select 方向键改值：到头/到尾不再循环。当前值不在选项里时，下一项从第一个、上一项从最后一个。 */
@@ -137,22 +142,29 @@ async function blurCell() {
   }
 }
 
-/** 被键盘导航聚焦时：走控件 focus（Form.Item 能收到获焦）；Select/时间框再张开弹窗。 */
+/**
+ * 键盘导航正在调用控件 focus。
+ * 只用来区分「导航换格」和「鼠标/Tab 获焦」，不拦截 focus / blur 事件本身。
+ */
+let navFocusing = false
+
+/** 被键盘导航聚焦时：走控件原有 focus（Form.Item 能收到获焦）；Select/时间框再张开弹窗。 */
 function focusCell(edge: CaretEdge) {
+  navFocusing = true
   if (isSelect.value) {
     selectRef.value?.focus()
     popupOpen.value = true
-    return
-  }
-  if (isDatePicker.value) {
+  } else if (isDatePicker.value) {
     pickerRef.value?.focus()
     popupOpen.value = true
     if (edge === 'all') placeCaret(edge)
-    return
+  } else {
+    inputRef.value?.focus()
+    placeCaret(edge)
   }
-  const input = inputRef.value
-  input?.focus()
-  placeCaret(edge)
+  nextTick(() => {
+    navFocusing = false
+  })
 }
 
 /** 回车 / Shift+方向键进入时全选；左右进入时把光标放到对应一端。 */
@@ -176,33 +188,48 @@ function placeCaret(edge: CaretEdge) {
   })
 }
 
-/**
- * 鼠标点进尚未获焦的输入框时全选，与键盘进入一致。
- * 必须在 mouseup 里 preventDefault：浏览器会在 click 时按点击位置放光标，把全选清掉。
- * 已获焦后再点：不拦截，允许把光标放到点击处或拖拽选区。
- * mouseup 听 window：按住拖出格子再松开时不要误全选。
- */
-function isPointerOnTextInput(event: MouseEvent) {
-  if (isSelect.value) return false
-  const target = event.target
-  if (!(target instanceof HTMLElement)) return false
-  if (target.closest('.ant-select')) return false
-  if (target.closest('.ant-picker-suffix, .ant-picker-clear')) return false
-  return Boolean(target.closest('input, textarea'))
+/** 鼠标点进未获焦输入框时为 true；只做标记，不 preventDefault。 */
+let pointerFocusing = false
+
+function onPointerDown() {
+  pointerFocusing = true
+  window.addEventListener(
+    'mouseup',
+    () => {
+      window.setTimeout(() => {
+        pointerFocusing = false
+      }, 0)
+    },
+    { once: true },
+  )
 }
 
-function onPointerSelectDown(event: MouseEvent) {
-  if (!isPointerOnTextInput(event)) return
-  const input = nativeInputEl()
-  if (!input || document.activeElement === input) return
+/**
+ * 控件原有 focus 已经触发后再跑这里：只开弹窗 / 补全选，不 stop、不 preventDefault。
+ * 鼠标获焦后浏览器还会在 click 里按点击位置放光标，所以全选放到 click 默认行为之后。
+ */
+function onNativeFocus() {
+  if (isSelect.value || isDatePicker.value) popupOpen.value = true
+  const fromPointer = pointerFocusing
+  pointerFocusing = false
+  if (navFocusing || isSelect.value) return
 
-  const onUp = (upEvent: MouseEvent) => {
-    window.removeEventListener('mouseup', onUp, true)
-    if (!wrapRef.value?.contains(upEvent.target as Node)) return
-    upEvent.preventDefault()
-    placeCaret('all')
+  const selectAll = () => {
+    if (wrapRef.value?.contains(document.activeElement)) placeCaret('all')
   }
-  window.addEventListener('mouseup', onUp, true)
+
+  if (!fromPointer) {
+    selectAll()
+    return
+  }
+
+  const input = nativeInputEl()
+  if (!input) return
+  const onClick = () => {
+    input.removeEventListener('click', onClick)
+    window.setTimeout(selectAll, 0)
+  }
+  input.addEventListener('click', onClick)
 }
 
 // 可编辑时注册，变为只读（例如保存后用户名）或卸载时注销。
@@ -230,7 +257,7 @@ watchEffect((onCleanup) => {
     :data-nav-row="record.id"
     :data-nav-field="config.dataIndex"
     :data-nav-popup-open="popupOpen ? 'true' : undefined"
-    @mousedown="onPointerSelectDown"
+    @mousedown.capture="onPointerDown"
   >
     <a-form-item class="table-form-item" :name="name" :rules="config.rules">
       <a-select
@@ -240,8 +267,8 @@ watchEffect((onCleanup) => {
         v-model:open="popupOpen"
         :options="config.options"
         :placeholder="config.placeholder"
-        @focus="openPopup"
-        @blur="closePopupOnBlur"
+        @focus="onNativeFocus"
+        @blur="onNativeBlur"
       />
       <a-date-picker
         v-else-if="isDatePicker"
@@ -253,7 +280,8 @@ watchEffect((onCleanup) => {
         :format="pickerFormat"
         :placeholder="config.placeholder"
         class="table-date-picker"
-        @focus="openPopup"
+        @focus="onNativeFocus"
+        @blur="onNativeBlur"
       />
       <a-input-number
         v-else-if="isNumber"
@@ -264,12 +292,16 @@ watchEffect((onCleanup) => {
         :precision="0"
         :placeholder="config.placeholder"
         class="table-number-input"
+        @focus="onNativeFocus"
+        @blur="onNativeBlur"
       />
       <a-input
         v-else
         ref="inputRef"
         v-model:value="fieldValue"
         :placeholder="config.placeholder"
+        @focus="onNativeFocus"
+        @blur="onNativeBlur"
       />
     </a-form-item>
   </div>
