@@ -33,6 +33,7 @@ export const mockUsers: SysUser[] = Array.from({ length: 6 }, (_, index) => {
     gender: genders[index % genders.length],
     email: `user${id}@example.com`,
     phone: `138${String(10000000 + id).slice(-8)}`,
+    telephone: `010-${String(80000000 + id).slice(-8)}`,
     department: departments[index % departments.length],
     role: roles[index % roles.length],
     status: userStatuses[index % 5 === 0 ? 1 : 0],

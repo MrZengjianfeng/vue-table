@@ -16,6 +16,8 @@ export interface SysUser {
   gender: UserGender
   email: string
   phone: string
+  /** 固定电话 / 办公电话 */
+  telephone: string
   department: string
   role: UserRole
   status: UserStatus

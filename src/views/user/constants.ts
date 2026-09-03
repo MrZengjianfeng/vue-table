@@ -12,6 +12,7 @@ export const emptyUserForm = (): UserForm => ({
   gender: 'male',
   email: '',
   phone: '',
+  telephone: '',
   department: '研发',
   role: 'viewer',
   status: 'active',
@@ -144,6 +145,14 @@ export const userColumnConfigs: UserColumnConfig[] = [
     control: 'input',
     placeholder: '手机号',
     rules: userFormRules.phone,
+  },
+  {
+    title: '电话',
+    dataIndex: 'telephone',
+    width: 150,
+    editable: true,
+    control: 'input',
+    placeholder: '电话',
   },
   {
     title: '部门',

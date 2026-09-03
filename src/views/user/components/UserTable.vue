@@ -181,7 +181,7 @@ defineExpose({
       :loading="loading"
       :pagination="false"
       row-key="id"
-      :scroll="{ x: 2200 }"
+      :scroll="{ x: 2350 }"
     >
       <template #bodyCell="{ column, record }">
         <!-- 操作列不走表单，单独渲染删除。 -->
