@@ -1,17 +1,14 @@
 /**
- * 路由。/login、404 为 public；其余走后台布局，未登录会跳到登录页。
+ * 路由。入口直接进用户管理，不再经过登录页。
  */
-import { createRouter, createWebHistory } from 'vue-router'
-import { useUserStore } from '@/stores/user'
+import { createRouter, createWebHashHistory } from 'vue-router'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes: [
     {
       path: '/login',
-      name: 'login',
-      component: () => import('@/views/login/index.vue'),
-      meta: { title: '登录', public: true },
+      redirect: '/user',
     },
     {
       path: '/',
@@ -33,28 +30,13 @@ const router = createRouter({
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('@/views/error/404.vue'),
-      meta: { title: '页面不存在', public: true },
+      meta: { title: '页面不存在' },
     },
   ],
 })
 
 router.beforeEach((to) => {
-  const userStore = useUserStore()
   document.title = `${to.meta.title ?? '后台'} · vue Table`
-
-  // 已登录再进登录页，直接去用户管理。
-  if (to.path === '/login' && userStore.isLoggedIn) {
-    return '/user'
-  }
-
-  // 非 public 页必须有 token，否则带上原地址去登录。
-  if (!to.meta.public && !userStore.isLoggedIn) {
-    return {
-      path: '/login',
-      query: { redirect: to.fullPath },
-    }
-  }
-
   return true
 })
 

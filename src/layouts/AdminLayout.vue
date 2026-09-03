@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
- * 后台布局：侧栏菜单、顶栏面包屑、当前登录用户与退出。
+ * 后台布局：侧栏菜单、顶栏面包屑。
  */
 import {
-  LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   UserOutlined,
@@ -11,12 +10,10 @@ import {
 import type { MenuProps } from 'ant-design-vue'
 import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useUserStore } from '@/stores/user'
 
 const collapsed = ref(false)
 const route = useRoute()
 const router = useRouter()
-const userStore = useUserStore()
 
 const selectedKeys = computed(() => [route.path])
 
@@ -38,11 +35,6 @@ const onMenuClick: MenuProps['onClick'] = ({ key }) => {
   const path = String(key)
   if (path === route.path) return
   router.push(path)
-}
-
-function handleLogout() {
-  userStore.logout()
-  router.push('/login')
 }
 </script>
 
@@ -71,22 +63,12 @@ function handleLogout() {
           />
           <a-breadcrumb :items="breadcrumbItems" />
         </div>
-        <a-dropdown>
-          <div class="user-entry">
-            <a-avatar size="small" style="background: #1677ff">
-              <template #icon><UserOutlined /></template>
-            </a-avatar>
-            <span>{{ userStore.name || userStore.username }}</span>
-          </div>
-          <template #overlay>
-            <a-menu>
-              <a-menu-item key="logout" @click="handleLogout">
-                <LogoutOutlined />
-                退出登录
-              </a-menu-item>
-            </a-menu>
-          </template>
-        </a-dropdown>
+        <div class="user-entry">
+          <a-avatar size="small" style="background: #1677ff">
+            <template #icon><UserOutlined /></template>
+          </a-avatar>
+          <span>管理员</span>
+        </div>
       </a-layout-header>
       <a-layout-content class="admin-content">
         <router-view />
@@ -152,7 +134,6 @@ function handleLogout() {
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
 }
 
 .admin-content {
